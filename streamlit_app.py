@@ -3,14 +3,17 @@ import pandas as pd
 import pickle
 import numpy as np
 
-# Load model and encoders
+# Load model
 xgb_model = pickle.load(open("xgb_model.pkl", "rb"))
 
-# Load encoders
-gender_encoder = pickle.load(open("gender_encode.pkl", "rb"))
-loan_intent_encoder = pickle.load(open("loan_intent_encode.pkl", "rb"))
-education_encoder = pickle.load(open("person_education_encode.pkl", "rb"))
-defaults_encoder = pickle.load(open("previous_loan_encode.pkl", "rb"))
+# Load encoders (ensure they are loaded correctly)
+try:
+    gender_encoder = pickle.load(open("gender_score_encode.pkl", "rb"))
+    loan_intent_encoder = pickle.load(open("loan_intent_encode.pkl", "rb"))
+    education_encoder = pickle.load(open("person_education_encode.pkl", "rb"))
+    defaults_encoder = pickle.load(open("previous_loan_encode.pkl", "rb"))
+except Exception as e:
+    st.error(f"Error loading encoders: {e}")
 
 # Load scalers for numerical data
 scalers = {col: pickle.load(open(f"{col}_scaler.pkl", "rb")) for col in ['person_income', 'person_emp_exp', 'loan_amnt', 'loan_int_rate', 'loan_percent_income', 'cb_person_cred_hist_length', 'credit_score']}
@@ -33,23 +36,34 @@ person_home_ownership = st.selectbox("Home Ownership", ["MORTGAGE", "OWN", "RENT
 loan_intent = st.selectbox("Loan Intent", ["DEBT CONSOLIDATION", "EDUCATION", "HOME IMPROVEMENT", "MEDICAL", "PERSONAL", "VENTURE"])
 
 # Convert categorical inputs using the loaded encoders
-person_gender = gender_encoder.transform([[person_gender]]).toarray().flatten()
-loan_intent = loan_intent_encoder.transform([[loan_intent]]).toarray().flatten()
+# For gender, using dictionary-based encoding if not an encoder object
+gender_mapping = {"Male": 1, "Female": 0}
+person_gender = gender_mapping.get(person_gender, 0)
+
+# Loan intent encoding using dictionary mapping
+loan_intent_mapping = {
+    'DEBT CONSOLIDATION': 0,
+    'EDUCATION': 1,
+    'HOME IMPROVEMENT': 2,
+    'MEDICAL': 3,
+    'PERSONAL': 4,
+    'VENTURE': 5
+}
 person_education = education_encoder.transform([[person_education]]).toarray().flatten()
 previous_loan_defaults = defaults_encoder.transform([[previous_loan_defaults]]).toarray().flatten()
 
 # Create input data frame
 input_data = pd.DataFrame([{
     'person_age': person_age,
-    'person_gender': person_gender[0],  # Assuming binary encoding
-    'person_education': person_education[0],  # Assuming one-hot encoding
+    'person_gender': person_gender,  # Assuming binary encoding for gender
+    'person_education': person_education[0],  # One-hot encoded
     'person_income': person_income,
     'person_emp_exp': person_emp_exp,
     'loan_amnt': loan_amnt,
     'loan_int_rate': loan_int_rate,
     'loan_percent_income': loan_percent_income,
     'credit_score': credit_score,
-    'previous_loan_defaults_on_file': previous_loan_defaults[0]  # Assuming binary encoding
+    'previous_loan_defaults_on_file': previous_loan_defaults[0]  # Assuming binary encoding for loan defaults
 }])
 
 # Scale numerical features
