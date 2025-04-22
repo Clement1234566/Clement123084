@@ -7,7 +7,7 @@ import numpy as np
 xgb_model = pickle.load(open("xgb_model.pkl", "rb"))
 
 # Load encoders
-gender_encoder = pickle.load(open("gender_score_encode.pkl", "rb"))
+gender_encoder = pickle.load(open("gender_encode.pkl", "rb"))
 loan_intent_encoder = pickle.load(open("loan_intent_encode.pkl", "rb"))
 education_encoder = pickle.load(open("person_education_encode.pkl", "rb"))
 defaults_encoder = pickle.load(open("previous_loan_encode.pkl", "rb"))
