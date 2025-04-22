@@ -1,56 +1,60 @@
 import streamlit as st
 import pandas as pd
 import pickle
-from models.data_preprocessor import DataPreprocessor
-from models.model_trainer import ModelTrainer
-from models.model_saver import ModelSaver
-from utils.encoders import Encoders
-from utils.scalers import Scalers
+import os
 
+# LOAD MODEL
+model = pickle.load(open("xgb_model.pkl", "rb"))
 
-# Load pre-trained model and encoders
-xgb_model = pickle.load(open('assets/xgb_model.pkl', 'rb'))
+# LOAD ENCODERS
+gender_encoder = pickle.load(open("gender_encode.pkl", "rb"))
+education_encoder = pickle.load(open("person_education_encode.pkl", "rb"))["person_education"]
+loan_encoder = pickle.load(open("loan_intent_encode.pkl", "rb"))
+prev_loan_encoder = pickle.load(open("previous_loan_encode.pkl", "rb"))
 
-def preprocess_user_input(user_input):
-    # Apply encoding and scaling based on user input
-    user_input['person_gender'] = Encoders.encode_gender(user_input['person_gender'])
-    user_input['previous_loan_defaults_on_file'] = Encoders.encode_previous_loan(user_input['previous_loan_defaults_on_file'])
-    user_input['person_education'] = Encoders.encode_education(user_input['person_education'])
-    user_input['loan_intent'] = Encoders.encode_loan_intent(user_input['loan_intent'])
+# LOAD SCALERS
+scalers = {}
+for col in ["person_income", "person_age", "loan_amount", "loan_percent_income"]:
+    with open(f"{col}_scaler.pkl", "rb") as f:
+        scalers[col] = pickle.load(f)
 
-    # Scale numerical columns
-    user_input['person_income'] = Scalers.scale_feature('person_income', user_input['person_income'])
+st.title("Loan Cancellation Prediction App")
 
-    return pd.DataFrame([user_input])
+# Input fields
+person_gender = st.selectbox("Select Gender", ["Male", "Female"])
+person_income = st.number_input("Enter Income", min_value=0)
+person_education = st.selectbox("Select Education", list(education_encoder.keys()))
+previous_loan_defaults_on_file = st.selectbox("Previous Loan Default", ["Yes", "No"])
+loan_intent = st.selectbox("Loan Intent", ["DEBT CONSOLIDATION", "HOME IMPROVEMENT", "MEDICAL", "VENTURE", "EDUCATION", "PERSONAL"])
+person_age = st.number_input("Age", min_value=18)
+loan_amount = st.number_input("Loan Amount", min_value=0)
+loan_percent_income = st.number_input("Loan % of Income", min_value=0.0)
 
-def main():
-    st.title("Loan Status Prediction")
+if st.button("Predict"):
+    # Encoding
+    gender_val = gender_encoder[person_gender]
+    education_val = education_encoder[person_education]
+    prev_loan_val = prev_loan_encoder[previous_loan_defaults_on_file]
 
-    # Input fields for user
-    person_gender = st.selectbox("Select Gender", ["Male", "Female"])
-    person_income = st.number_input("Enter Income", min_value=0)
-    person_education_text = st.selectbox("Select Education", list(person_education_encoder.keys()))
-    person_education = person_education_encoder[person_education_text]
+    # OHE for loan_intent
+    intent_df = pd.DataFrame([[loan_intent]], columns=["loan_intent"])
+    intent_ohe = loan_encoder.transform(intent_df).toarray()
+    intent_columns = loan_encoder.get_feature_names_out()
 
-    previous_loan_defaults_on_file = st.selectbox("Previous Loan Defaults", ["Yes", "No"])
-    loan_intent = st.selectbox("Loan Intent", ["DEBT CONSOLIDATION", "HOME IMPROVEMENT", "PERSONAL LOAN", "OTHER"])
-
-    user_input = {
-        "person_gender": person_gender,
-        "person_income": person_income,
-        "person_education": person_education,
-        "previous_loan_defaults_on_file": previous_loan_defaults_on_file,
-        "loan_intent": loan_intent,
+    # Final input
+    input_dict = {
+        "person_gender": gender_val,
+        "person_income": scalers["person_income"].transform([[person_income]])[0][0],
+        "person_education": education_val,
+        "previous_loan_defaults_on_file": prev_loan_val,
+        "person_age": scalers["person_age"].transform([[person_age]])[0][0],
+        "loan_amount": scalers["loan_amount"].transform([[loan_amount]])[0][0],
+        "loan_percent_income": scalers["loan_percent_income"].transform([[loan_percent_income]])[0][0],
     }
+    
+    base_df = pd.DataFrame([input_dict])
+    intent_df = pd.DataFrame(intent_ohe, columns=intent_columns)
+    final_input = pd.concat([base_df, intent_df], axis=1)
 
-    if st.button("Predict"):
-        processed_input = preprocess_user_input(user_input)
-        prediction = xgb_model.predict(processed_input)
-        
-        if prediction == 1:
-            st.success("The loan status prediction: Approved")
-        else:
-            st.error("The loan status prediction: Denied")
-
-if __name__ == "__main__":
-    main()
+    prediction = model.predict(final_input)[0]
+    st.success(f"Prediction: {'Loan Will Be Approved' if prediction == 0 else 'Loan Will Be Cancelled'}")
