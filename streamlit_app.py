@@ -1,82 +1,69 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import pickle
-from sklearn.preprocessing import OneHotEncoder
-from sklearn.preprocessing import RobustScaler
+from sklearn.preprocessing import LabelEncoder
 
-# Load the trained XGBoost model and encoders
-xgb_model = pickle.load(open("xgb_model.pkl", "rb"))
-person_gender_encoder = pickle.load(open("gender_encode.pkl", "rb"))
-previous_loan_encoder = pickle.load(open("previous_loan_encode.pkl", "rb"))
-person_education_encoder = pickle.load(open("person_education_encode.pkl", "rb"))
+# Load the trained model and encoder
+model = pickle.load(open("model.pkl", "rb"))
+encoder = pickle.load(open("encoder.pkl", "rb"))
 
-# Function to preprocess input data
+# Function to preprocess the input data (using encoder and model)
 def preprocess_input(user_input):
-    # Preprocessing gender
-    user_input['person_gender'] = user_input['person_gender'].map({'Male': 1, 'Female': 0})
+    # Assuming the encoder is a LabelEncoder, for example
+    # If you used OneHotEncoder, you'll need to adapt this
+    processed_data = user_input.copy()
 
-    # Preprocessing previous_loan_defaults_on_file
-    user_input['previous_loan_defaults_on_file'] = user_input['previous_loan_defaults_on_file'].map({'Yes': 1, 'No': 0})
-    
-    # Encoding education level
-    user_input = user_input.replace({"person_education": person_education_encoder["person_education"]})
-    
-    # One-hot encode categorical variables like 'person_home_ownership' and 'loan_intent'
-    home_ownership_encoder = OneHotEncoder()
-    loan_intent_encoder = OneHotEncoder()
-    
-    # Example: Assuming home_ownership and loan_intent were previously encoded
-    person_home_ownership_train = pd.DataFrame(home_ownership_encoder.transform(user_input[['person_home_ownership']]).toarray(), 
-                                              columns=home_ownership_encoder.get_feature_names_out())
-    loan_intent_train = pd.DataFrame(loan_intent_encoder.transform(user_input[['loan_intent']]).toarray(), 
-                                      columns=loan_intent_encoder.get_feature_names_out())
-    
-    # Add the one-hot encoded columns back to the dataframe
-    user_input = pd.concat([user_input, person_home_ownership_train, loan_intent_train], axis=1)
-    
-    # Drop original columns after encoding
-    user_input = user_input.drop(['person_home_ownership', 'loan_intent'], axis=1)
+    # Example: If the 'hotel_type' column was encoded
+    processed_data['hotel_type'] = encoder.transform([user_input['hotel_type']])[0]  # Use encoder to transform the input
 
-    # Scaling numerical data (assuming RobustScaler was used for features)
-    scaler = RobustScaler()
-    numerical_columns = user_input.select_dtypes(include=['number']).columns.tolist()
-    
-    for col in numerical_columns:
-        user_input[col] = scaler.fit_transform(user_input[[col]])
-    
-    return user_input
+    # Convert the processed_data to a DataFrame
+    input_df = pd.DataFrame([processed_data])
 
-# Function to make predictions
+    return input_df
+
+# Function to make a prediction
 def make_prediction(input_data):
+    # Preprocess the data
     processed_input = preprocess_input(input_data)
-    prediction = xgb_model.predict(processed_input)
+
+    # Use the model to predict
+    prediction = model.predict(processed_input)
+
     return prediction
 
 # Streamlit UI
-st.title("Loan Status Prediction")
-st.write("Please fill out the form below to predict the loan status.")
+st.title("Hotel Booking Cancellation Prediction")
+
+st.write("Please fill out the form below to predict whether a booking will be cancelled or not.")
 
 # Get user input
-person_gender = st.selectbox("Gender", ["Male", "Female"])
-previous_loan_defaults_on_file = st.selectbox("Previous Loan Defaults on File", ["Yes", "No"])
-person_education = st.selectbox("Education Level", ["High School", "Associate", "Bachelor", "Master", "Doctorate"])
-person_home_ownership = st.selectbox("Home Ownership", ["Own", "Mortgage", "Rent"])
-loan_intent = st.selectbox("Loan Intent", ["Debt Consolidation", "Home Improvement", "Other"])
+hotel_type = st.selectbox("Hotel Type", ["Resort Hotel", "City Hotel"])
+lead_time = st.number_input("Lead Time (days)", min_value=0, max_value=500, value=10)
+adults = st.number_input("Number of Adults", min_value=1, max_value=10, value=1)
+children = st.number_input("Number of Children", min_value=0, max_value=10, value=0)
+babies = st.number_input("Number of Babies", min_value=0, max_value=10, value=0)
+meal = st.selectbox("Meal Type", ["BB", "HB", "FB", "SC", "Undefined"])
+country = st.text_input("Country", "USA")
+market_segment = st.selectbox("Market Segment", ["Direct", "Corporate", "Online TA", "Offline TA/TO", "Complementary", "Undefined"])
 
 # Create a dictionary to store the input
 user_input = {
-    "person_gender": person_gender,
-    "previous_loan_defaults_on_file": previous_loan_defaults_on_file,
-    "person_education": person_education,
-    "person_home_ownership": person_home_ownership,
-    "loan_intent": loan_intent,
+    "hotel_type": hotel_type,
+    "lead_time": lead_time,
+    "adults": adults,
+    "children": children,
+    "babies": babies,
+    "meal": meal,
+    "country": country,
+    "market_segment": market_segment
 }
 
 # When the user clicks the 'Predict' button
-if st.button("Predict Loan Status"):
-    prediction = make_prediction(pd.DataFrame([user_input]))
+if st.button("Predict Cancellation"):
+    prediction = make_prediction(user_input)
     
     if prediction == 1:
-        st.write("The loan will likely be **approved**.")
+        st.write("The booking will likely be **canceled**.")
     else:
-        st.write("The loan will likely **not be approved**.")
+        st.write("The booking will likely **not be canceled**.")
