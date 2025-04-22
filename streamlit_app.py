@@ -1,74 +1,77 @@
 import streamlit as st
 import pandas as pd
 import pickle
-from sklearn.preprocessing import LabelEncoder
+import numpy as np
 
-# Load model
-with open("xgb_model.pkl", "rb") as f:
-    model = pickle.load(f)
+# Load model and encoders
+xgb_model = pickle.load(open("xgb_model.pkl", "rb"))
+home_ownership_encoder = pickle.load(open("home_ownership_encoder.pkl", "rb"))
+loan_intent_encoder = pickle.load(open("loan_intent_encoder.pkl", "rb"))
+scalers = {col: pickle.load(open(f"{col}_scaler.pkl", "rb")) for col in ['person_income', 'person_emp_exp', 'loan_amnt', 'loan_int_rate', 'loan_percent_income', 'cb_person_cred_hist_length', 'credit_score']}
 
-# Label Encoders (harus sama urutan dan label seperti saat training)
-gender_encoder = LabelEncoder()
-gender_encoder.fit(['Male', 'Female'])
+# Maps for encoding
+education_map = {"High School": 0, "Associate": 1, "Bachelor": 2, "Master": 3, "Doctorate": 4}
+gender_map = {"Male": 1, "Female": 0}
+defaults_map = {"Yes": 1, "No": 0}
 
-education_encoder = LabelEncoder()
-education_encoder.fit(['High School', 'College', 'Graduate', 'Other'])
+# Streamlit UI
+st.title("Loan Cancellation Prediction")
 
-home_encoder = LabelEncoder()
-home_encoder.fit(['Rent', 'Own', 'Mortgage', 'Other'])
+person_age = st.number_input("Enter Age", min_value=18, max_value=100, value=30)
+person_gender = st.selectbox("Select Gender", ["Male", "Female"])
+person_education = st.selectbox("Select Education", ["High School", "Associate", "Bachelor", "Master", "Doctorate"])
+person_income = st.number_input("Enter Income", min_value=0)
+person_emp_exp = st.number_input("Enter Employment Experience", min_value=0)
+loan_amnt = st.number_input("Enter Loan Amount", min_value=1000)
+loan_int_rate = st.number_input("Enter Interest Rate", min_value=0.0, max_value=100.0)
+loan_percent_income = st.number_input("Enter Loan Percent Income", min_value=0.0, max_value=100.0)
+credit_score = st.number_input("Enter Credit Score", min_value=300, max_value=850)
+previous_loan_defaults = st.selectbox("Previous Loan Defaults", ["Yes", "No"])
+person_home_ownership = st.selectbox("Home Ownership", ["MORTGAGE", "OWN", "RENT", "OTHER"])
+loan_intent = st.selectbox("Loan Intent", ["DEBT CONSOLIDATION", "EDUCATION", "HOME IMPROVEMENT", "MEDICAL", "PERSONAL", "VENTURE"])
 
-intent_encoder = LabelEncoder()
-intent_encoder.fit(['Personal', 'Medical', 'Education', 'Venture', 'Home Improvement', 'Debt Consolidation'])
+# Convert user inputs to correct format
+person_gender = gender_map[person_gender]
+person_education = education_map[person_education]
+previous_loan_defaults = defaults_map[previous_loan_defaults]
 
-# Judul
-st.title("Prediksi Persetujuan Pinjaman")
+# One-hot encoding for categorical columns
+home_ownership_ohe = home_ownership_encoder.transform([[person_home_ownership]]).toarray()
+loan_intent_ohe = loan_intent_encoder.transform([[loan_intent]]).toarray()
 
-st.markdown("Masukkan detail pemohon untuk memprediksi apakah pinjaman akan **disetujui** atau **ditolak**.")
+# Create input data frame
+input_data = pd.DataFrame([{
+    'person_age': person_age,
+    'person_gender': person_gender,
+    'person_education': person_education,
+    'person_income': person_income,
+    'person_emp_exp': person_emp_exp,
+    'loan_amnt': loan_amnt,
+    'loan_int_rate': loan_int_rate,
+    'loan_percent_income': loan_percent_income,
+    'credit_score': credit_score,
+    'previous_loan_defaults_on_file': previous_loan_defaults
+}])
 
-# Form Input
-with st.form("form_prediksi"):
-    person_age = st.number_input("Usia", min_value=18, max_value=100, value=30)
-    person_gender = st.selectbox("Jenis Kelamin", gender_encoder.classes_)
-    person_education = st.selectbox("Pendidikan Terakhir", education_encoder.classes_)
-    person_income = st.number_input("Pendapatan Tahunan", min_value=1000, value=45000)
-    person_emp_exp = st.number_input("Pengalaman Kerja (tahun)", min_value=0, value=5)
-    person_home_ownership = st.selectbox("Status Tempat Tinggal", home_encoder.classes_)
-    loan_amnt = st.number_input("Jumlah Pinjaman", min_value=500, value=10000)
-    loan_intent = st.selectbox("Tujuan Pinjaman", intent_encoder.classes_)
-    loan_int_rate = st.number_input("Suku Bunga Pinjaman (%)", min_value=1.0, value=11.5)
-    loan_percent_income = st.number_input("Rasio Pinjaman terhadap Pendapatan", min_value=0.01, max_value=1.0, value=0.22)
-    cb_person_cred_hist_length = st.number_input("Lama Riwayat Kredit (tahun)", min_value=1, value=6)
-    credit_score = st.number_input("Skor Kredit", min_value=300, max_value=850, value=730)
-    previous_loan_defaults_on_file = st.selectbox("Pernah Menunggak Pinjaman Sebelumnya?", [0, 1])
+# Scale numerical features
+for col in ['person_income', 'person_emp_exp', 'loan_amnt', 'loan_int_rate', 'loan_percent_income', 'cb_person_cred_hist_length', 'credit_score']:
+    input_data[[col]] = scalers[col].transform(input_data[[col]])
 
-    submitted = st.form_submit_button("Prediksi")
+# Combine one-hot encoded columns with input data
+ohe_df = pd.DataFrame(
+    np.hstack([home_ownership_ohe, loan_intent_ohe]),
+    columns = list(home_ownership_encoder.get_feature_names_out()) + list(loan_intent_encoder.get_feature_names_out())
+)
+final_input = pd.concat([input_data.reset_index(drop=True), ohe_df], axis=1)
 
-    if submitted:
-        df_pred = pd.DataFrame([{
-            'person_age': person_age,
-            'person_gender': gender_encoder.transform([person_gender])[0],
-            'person_education': education_encoder.transform([person_education])[0],
-            'person_income': person_income,
-            'person_emp_exp': person_emp_exp,
-            'person_home_ownership': home_encoder.transform([person_home_ownership])[0],
-            'loan_amnt': loan_amnt,
-            'loan_intent': intent_encoder.transform([loan_intent])[0],
-            'loan_int_rate': loan_int_rate,
-            'loan_percent_income': loan_percent_income,
-            'cb_person_cred_hist_length': cb_person_cred_hist_length,
-            'credit_score': credit_score,
-            'previous_loan_defaults_on_file': previous_loan_defaults_on_file
-        }])
+# Predict using the trained XGBoost model
+prediction = xgb_model.predict(final_input)
+prediction_proba = xgb_model.predict_proba(final_input)
 
-        pred = model.predict(df_pred)[0]
-        hasil = " Disetujui" if pred == 1 else " Ditolak"
-        st.subheader(f"Hasil Prediksi: {hasil}")
-
-st.markdown("### Contoh Test Case")
-if st.button("Test Case 1"):
-    st.info("Pria, umur 30, pendapatan 45K, tujuan pribadi, skor kredit 730")
-    st.success("Prediksi:  Disetujui (kemungkinan besar)")
-
-if st.button("Test Case 2"):
-    st.info("Wanita, umur 22, pendapatan 12K, tunggakan sebelumnya, skor kredit 580")
-    st.error("Prediksi:  Ditolak (kemungkinan besar)")
+# Display the prediction and probability
+if prediction[0] == 1:
+    st.subheader("Prediction: Loan Cancellation Likely")
+    st.write(f"Probability: {prediction_proba[0][1]:.2f}")
+else:
+    st.subheader("Prediction: Loan Cancellation Unlikely")
+    st.write(f"Probability: {prediction_proba[0][0]:.2f}")
