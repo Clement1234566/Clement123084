@@ -4,7 +4,7 @@ import pickle
 from sklearn.preprocessing import LabelEncoder
 
 # Load model
-with open("best_model.pkl", "rb") as f:
+with open("xgb_model.pkl", "rb") as f:
     model = pickle.load(f)
 
 # Label Encoders (harus sama urutan dan label seperti saat training)
