@@ -7,6 +7,7 @@ from models.model_saver import ModelSaver
 from utils.encoders import Encoders
 from utils.scalers import Scalers
 
+
 # Load pre-trained model and encoders
 xgb_model = pickle.load(open('assets/xgb_model.pkl', 'rb'))
 
