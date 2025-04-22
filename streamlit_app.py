@@ -28,7 +28,9 @@ def main():
     # Input fields for user
     person_gender = st.selectbox("Select Gender", ["Male", "Female"])
     person_income = st.number_input("Enter Income", min_value=0)
-    person_education = st.selectbox("Select Education", ["High School", "Associate", "Bachelor", "Master", "Doctorate"])
+    person_education_text = st.selectbox("Select Education", list(person_education_encoder.keys()))
+    person_education = person_education_encoder[person_education_text]
+
     previous_loan_defaults_on_file = st.selectbox("Previous Loan Defaults", ["Yes", "No"])
     loan_intent = st.selectbox("Loan Intent", ["DEBT CONSOLIDATION", "HOME IMPROVEMENT", "PERSONAL LOAN", "OTHER"])
 
