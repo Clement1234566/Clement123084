@@ -10,7 +10,7 @@ xgb_model = pickle.load(open("xgb_model.pkl", "rb"))
 try:
     gender_encoder = pickle.load(open("gender_score_encode.pkl", "rb"))
     loan_intent_encoder = pickle.load(open("loan_intent_encode.pkl", "rb"))
-    education_encoder = pickle.load(open("person_education_encode.pkl", "rb"))
+    education_encoder = pickle.load(open("person_education_encode.pkl", "rb"))  # Ensure this is loaded correctly
     defaults_encoder = pickle.load(open("previous_loan_encode.pkl", "rb"))
 except Exception as e:
     st.error(f"Error loading encoders: {e}")
@@ -49,7 +49,7 @@ loan_intent_mapping = {
     'PERSONAL': 4,
     'VENTURE': 5
 }
-person_education = education_encoder.transform([[person_education]]).toarray().flatten()
+person_education = education_encoder.transform([[person_education]]).toarray().flatten() if education_encoder else [0, 0, 0, 0, 0]  # Handle case where encoder is not loaded
 previous_loan_defaults = defaults_encoder.transform([[previous_loan_defaults]]).toarray().flatten()
 
 # Create input data frame
