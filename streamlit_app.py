@@ -14,7 +14,7 @@ prev_loan_encoder = pickle.load(open("previous_loan_encode.pkl", "rb"))
 
 # LOAD SCALERS
 scalers = {}
-for col in ["person_income", "person_age", "loan_amount", "loan_percent_income"]:
+for col in ["person_income", "person_age", "loan_amnt", "loan_percent_income"]:
     with open(f"{col}_scaler.pkl", "rb") as f:
         scalers[col] = pickle.load(f)
 
