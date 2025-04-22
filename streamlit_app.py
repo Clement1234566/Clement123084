@@ -1,93 +1,58 @@
 import streamlit as st
 import pandas as pd
 import pickle
-from xgboost import XGBClassifier
-from sklearn.metrics import classification_report
-import seaborn as sns
-import matplotlib.pyplot as plt
 
-# Load all encoders & model
+# Load model dan encoder
+model = pickle.load(open("xgb_model.pkl", "rb"))
 gender_encoder = pickle.load(open("gender_encode.pkl", "rb"))
+loan_intent_encoder = pickle.load(open("loan_intent_encode.pkl", "rb"))
 education_encoder = pickle.load(open("person_education_encode.pkl", "rb"))
 previous_loan_encoder = pickle.load(open("previous_loan_encode.pkl", "rb"))
-loan_intent_encoder = pickle.load(open("loan_intent_encode.pkl", "rb"))
-model = pickle.load(open("xgb_model.pkl", "rb"))
 
-# Load all scalers
-scaler_files = {
-    "person_age": "person_age_scaler.pkl",
-    "person_income": "person_income_scaler.pkl",
-    "person_emp_length": "person_emp_length_scaler.pkl",
-    "loan_amnt": "loan_amnt_scaler.pkl",
-    "loan_int_rate": "loan_int_rate_scaler.pkl"
-}
-scalers = {col: pickle.load(open(path, "rb")) for col, path in scaler_files.items()}
+# Load scaler untuk semua kolom numerik
+scalers = {}
+for col in ["person_age", "person_income", "person_emp_length", "loan_amnt", "loan_int_rate", "loan_percent_income", "cb_person_cred_hist_length"]:
+    scalers[col] = pickle.load(open(f"{col}_scaler.pkl", "rb"))
 
-# Function to preprocess single row input
-def preprocess_input(df):
-    df = df.copy()
+st.title("Loan Cancellation Prediction")
+st.write("Masukkan detail pinjaman untuk memprediksi statusnya")
 
-    # Gender encoding
-    df['person_gender'] = df['person_gender'].map(gender_encoder)
+# Form Input
+person_age = st.number_input("Age", min_value=18, max_value=100, value=30)
+person_income = st.number_input("Income", min_value=0, value=50000)
+person_emp_length = st.number_input("Employment Length (in years)", min_value=0, value=5)
+person_home_ownership = st.selectbox("Home Ownership", ["RENT", "OWN", "MORTGAGE", "OTHER"])
+person_education = st.selectbox("Education", ["High School", "Associate", "Bachelor", "Master", "Doctorate"])
+person_gender = st.selectbox("Gender", ["Male", "Female"])
+loan_intent = st.selectbox("Loan Intent", ["DEBT CONSOLIDATION", "EDUCATION", "HOME IMPROVEMENT", "MEDICAL", "PERSONAL", "VENTURE"])
+loan_amnt = st.number_input("Loan Amount", min_value=100, value=2000)
+loan_int_rate = st.number_input("Interest Rate", min_value=0.0, max_value=50.0, value=10.0)
+loan_percent_income = st.number_input("Loan % of Income", min_value=0.0, max_value=1.0, value=0.2)
+previous_loan_defaults_on_file = st.selectbox("Previous Loan Defaults", ["Yes", "No"])
+cb_person_cred_hist_length = st.number_input("Credit History Length", min_value=0, value=5)
 
-    # Education encoding
-    df['person_education'] = df['person_education'].map(education_encoder['person_education'])
+# Encode categorical
+encoded_gender = gender_encoder.get(person_gender)
+encoded_previous_loan = previous_loan_encoder.get(previous_loan_defaults_on_file)
+encoded_education = education_encoder["person_education"].get(person_education)
 
-    # Previous loan default
-    df['previous_loan_defaults_on_file'] = df['previous_loan_defaults_on_file'].map(previous_loan_encoder)
+# One-hot encode loan intent dan home ownership
+loan_intent_ohe = loan_intent_encoder.transform([[loan_intent]]).toarray()
+person_home_ownership_ohe = pickle.load(open("person_home_ownership_encoder.pkl", "rb")).transform([[person_home_ownership]]).toarray()
 
-    # OneHot loan_intent
-    loan_intent_ohe = loan_intent_encoder.transform(df[['loan_intent']]).toarray()
-    loan_intent_df = pd.DataFrame(loan_intent_ohe, columns=loan_intent_encoder.get_feature_names_out())
-    df = pd.concat([df.reset_index(drop=True), loan_intent_df.reset_index(drop=True)], axis=1)
-    df.drop('loan_intent', axis=1, inplace=True)
+# Scale numeric
+scaled_inputs = []
+for col, val in zip(["person_age", "person_income", "person_emp_length", "loan_amnt", "loan_int_rate", "loan_percent_income", "cb_person_cred_hist_length"],
+                    [person_age, person_income, person_emp_length, loan_amnt, loan_int_rate, loan_percent_income, cb_person_cred_hist_length]):
+    scaled_inputs.append(scalers[col].transform([[val]])[0][0])
 
-    # Drop other unneeded columns if any
-    if 'loan_status' in df.columns:
-        df.drop('loan_status', axis=1, inplace=True)
+# Final input vector
+final_input = pd.DataFrame([
+    [encoded_gender, encoded_education, encoded_previous_loan] + scaled_inputs + list(person_home_ownership_ohe[0]) + list(loan_intent_ohe[0])
+])
 
-    # Scaling numeric columns
-    for col in scalers:
-        if col in df.columns:
-            df[col] = scalers[col].transform(df[[col]])
-
-    return df
-
-# Streamlit app
-def main():
-    st.set_page_config(layout="wide")
-    st.title("🚀 Loan Default Prediction App")
-
-    uploaded_file = st.file_uploader("📄 Upload a CSV file", type=["csv"])
-
-    if uploaded_file is not None:
-        df = pd.read_csv(uploaded_file)
-        st.subheader("🔍 Original Data Preview")
-        st.write(df.head())
-
-        # Preprocess
-        try:
-            X_processed = preprocess_input(df)
-        except Exception as e:
-            st.error(f"❌ Error saat preprocessing data: {e}")
-            return
-
-        # Predict
-        preds = model.predict(X_processed)
-        df['prediction'] = preds
-        st.subheader("📈 Prediction Result")
-        st.write(df[['prediction']])
-
-        # Option to display class distribution
-        st.subheader("📊 Class Distribution")
-        st.bar_chart(df['prediction'].value_counts())
-
-        # Optional: Download result
-        csv_result = df.to_csv(index=False).encode("utf-8")
-        st.download_button("⬇️ Download Predictions CSV", data=csv_result, file_name="loan_prediction_result.csv", mime="text/csv")
-
-    else:
-        st.info("Silakan unggah file CSV berisi data pinjaman untuk diprediksi.")
-
-if __name__ == "__main__":
-    main()
+# Predict
+if st.button("Predict Loan Status"):
+    prediction = model.predict(final_input)[0]
+    result = "Loan Will Be Paid" if prediction == 0 else "Loan Will Be Cancelled"
+    st.success(f"Prediction: {result}")
